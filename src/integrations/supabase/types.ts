@@ -9,6 +9,39 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      generation_tasks: {
+        Row: {
+          content: string | null
+          created_at: string
+          error_message: string | null
+          progress: number
+          prompt: string
+          status: string
+          task_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          error_message?: string | null
+          progress?: number
+          prompt: string
+          status?: string
+          task_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          error_message?: string | null
+          progress?: number
+          prompt?: string
+          status?: string
+          task_id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       stories: {
         Row: {
           content: string
