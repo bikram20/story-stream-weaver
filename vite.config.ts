@@ -9,6 +9,15 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
+  preview: {
+    host: "0.0.0.0",
+    port: 8080,
+    allowedHosts: [
+      "whale-app-un47h.ondigitalocean.app",
+      "localhost",
+      "127.0.0.1"
+    ]
+  },
   plugins: [
     react(),
     mode === 'development' &&
