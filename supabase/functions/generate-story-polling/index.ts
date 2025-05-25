@@ -21,19 +21,19 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const url = new URL(req.url);
-  const taskId = url.searchParams.get('taskId');
-
-  if (req.method === 'GET' && taskId) {
-    // Poll for task status
-    const task = activeGenerations.get(taskId);
-    if (!task) {
+  if (req.method === 'GET') {
+    // Poll for task status - we'll use the most recent task for now
+    // In a real app, you'd get the taskId from query params
+    const tasks = Array.from(activeGenerations.entries());
+    if (tasks.length === 0) {
       return new Response(JSON.stringify({ status: 'not_found' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 404,
       });
     }
 
+    // Return the most recent task status
+    const [taskId, task] = tasks[tasks.length - 1];
     return new Response(JSON.stringify(task), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

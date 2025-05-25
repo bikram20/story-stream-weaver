@@ -136,14 +136,17 @@ const Index = () => {
         throw error;
       }
 
-      // For SSE, we need to handle the streaming response differently
-      // The edge function will handle the streaming and save to database
-      // We'll rely on realtime updates to refresh the story list
-      setIsGenerating(false);
-      toast({
-        title: "Story Generation Started",
-        description: "Your story is being generated with SSE streaming.",
-      });
+      // Display the generated story immediately
+      if (data && data.success && data.content) {
+        setCurrentStory(data.content);
+        setIsGenerating(false);
+        toast({
+          title: "Story Generated!",
+          description: "Your story has been created successfully.",
+        });
+      } else {
+        throw new Error('No story content received');
+      }
 
     } catch (error) {
       console.error('SSE generation error:', error);
