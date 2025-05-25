@@ -61,15 +61,14 @@ const Index = () => {
 
     const pollInterval = setInterval(async () => {
       try {
-        const response = await supabase.functions.invoke('generate-story-polling', {
+        const { data, error } = await supabase.functions.invoke('generate-story-polling', {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        }, {
-          queryParams: { taskId: pollTaskId }
         });
 
-        if (response.data) {
-          const { status, content, progress, error } = response.data;
+        if (error) throw error;
+
+        if (data) {
+          const { status, content, progress, error: taskError } = data;
           
           if (status === 'generating') {
             setCurrentStory(content || '');
@@ -90,7 +89,7 @@ const Index = () => {
             clearInterval(pollInterval);
             toast({
               title: "Generation Failed",
-              description: error || "Failed to generate story",
+              description: taskError || "Failed to generate story",
               variant: "destructive",
             });
           }
@@ -100,6 +99,11 @@ const Index = () => {
         setIsGenerating(false);
         setPollTaskId(null);
         clearInterval(pollInterval);
+        toast({
+          title: "Polling Error",
+          description: "Failed to check story generation status",
+          variant: "destructive",
+        });
       }
     }, 1000); // Poll every second
 
@@ -123,55 +127,24 @@ const Index = () => {
 
   const generateWithSSE = async () => {
     try {
-      const response = await fetch(`https://kczezulhpklofnibgarp.functions.supabase.co/generate-story-sse`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ prompt }),
+      const { data, error } = await supabase.functions.invoke('generate-story-sse', {
+        body: { prompt },
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to start story generation');
+      if (error) {
+        console.error('SSE invoke error:', error);
+        throw error;
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response body');
+      // For SSE, we need to handle the streaming response differently
+      // The edge function will handle the streaming and save to database
+      // We'll rely on realtime updates to refresh the story list
+      setIsGenerating(false);
+      toast({
+        title: "Story Generation Started",
+        description: "Your story is being generated with SSE streaming.",
+      });
 
-      const decoder = new TextDecoder();
-      let story = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.type === 'chunk') {
-                story += data.content;
-                setCurrentStory(story);
-              } else if (data.type === 'complete') {
-                setIsGenerating(false);
-                toast({
-                  title: "Story Complete!",
-                  description: "Your story has been generated successfully.",
-                });
-                return;
-              } else if (data.type === 'error') {
-                throw new Error(data.message);
-              }
-            } catch (e) {
-              console.error('Error parsing SSE data:', e);
-            }
-          }
-        }
-      }
     } catch (error) {
       console.error('SSE generation error:', error);
       setIsGenerating(false);
@@ -185,13 +158,16 @@ const Index = () => {
 
   const generateWithPolling = async () => {
     try {
-      const response = await supabase.functions.invoke('generate-story-polling', {
+      const { data, error } = await supabase.functions.invoke('generate-story-polling', {
         body: { prompt },
       });
 
-      if (response.error) throw response.error;
+      if (error) {
+        console.error('Polling invoke error:', error);
+        throw error;
+      }
       
-      const { taskId } = response.data;
+      const { taskId } = data;
       setPollTaskId(taskId);
       setPollProgress(0);
       setCurrentStory('');

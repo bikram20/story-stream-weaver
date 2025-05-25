@@ -74,6 +74,16 @@ serve(async (req) => {
 
 async function generateStoryInBackground(taskId: string, prompt: string) {
   try {
+    // Simulate progress updates
+    for (let progress = 10; progress <= 90; progress += 10) {
+      activeGenerations.set(taskId, {
+        status: 'generating',
+        content: '',
+        progress,
+      });
+      await new Promise(resolve => setTimeout(resolve, 200)); // Small delay
+    }
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -89,7 +99,6 @@ async function generateStoryInBackground(taskId: string, prompt: string) {
           },
           { role: 'user', content: prompt }
         ],
-        stream: true,
         max_tokens: 500,
         temperature: 0.8,
       }),
@@ -99,76 +108,38 @@ async function generateStoryInBackground(taskId: string, prompt: string) {
       throw new Error(`OpenAI API error: ${response.status}`);
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
+    const data = await response.json();
+    const generatedContent = data.choices[0].message.content;
+
+    // Save to database
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const title = prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt;
+    
+    const { error: insertError } = await supabase
+      .from('stories')
+      .insert({ 
+        title: title,
+        content: generatedContent.trim()
+      });
+
+    if (insertError) {
+      console.error('Error saving story:', insertError);
     }
 
-    let fullStory = '';
-    const decoder = new TextDecoder();
-    let chunkCount = 0;
+    // Mark as complete
+    activeGenerations.set(taskId, {
+      status: 'complete',
+      content: generatedContent.trim(),
+      progress: 100,
+    });
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    // Clean up after 5 minutes
+    setTimeout(() => {
+      activeGenerations.delete(taskId);
+    }, 5 * 60 * 1000);
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+    console.log('Story generation completed for task:', taskId);
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') {
-            // Save to database
-            const supabase = createClient(supabaseUrl, supabaseServiceKey);
-            const title = prompt.length > 50 ? prompt.substring(0, 50) + '...' : prompt;
-            
-            await supabase
-              .from('stories')
-              .insert({ 
-                title: title,
-                content: fullStory.trim()
-              });
-
-            // Mark as complete
-            activeGenerations.set(taskId, {
-              status: 'complete',
-              content: fullStory.trim(),
-              progress: 100,
-            });
-
-            // Clean up after 5 minutes
-            setTimeout(() => {
-              activeGenerations.delete(taskId);
-            }, 5 * 60 * 1000);
-
-            console.log('Story generation completed for task:', taskId);
-            return;
-          }
-
-          try {
-            const parsed = JSON.parse(data);
-            const content = parsed.choices?.[0]?.delta?.content;
-            
-            if (content) {
-              fullStory += content;
-              chunkCount++;
-              
-              // Update progress (estimate based on chunk count)
-              const progress = Math.min(Math.floor((chunkCount / 50) * 100), 95);
-              
-              activeGenerations.set(taskId, {
-                status: 'generating',
-                content: fullStory,
-                progress,
-              });
-            }
-          } catch (e) {
-            // Skip malformed JSON
-          }
-        }
-      }
-    }
   } catch (error) {
     console.error('Error in background generation:', error);
     activeGenerations.set(taskId, {
