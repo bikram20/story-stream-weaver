@@ -1,0 +1,21 @@
+name: story-stream-weaver
+services:
+- name: web
+  source_dir: /
+  github:
+    repo: your-username/story-stream-weaver
+    branch: main
+  run_command: npm start
+  environment_slug: node-js
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  routes:
+  - path: /
+  build_command: npm run build
+  envs:
+  - key: NODE_ENV
+    value: production
+  - key: VITE_SUPABASE_URL
+    value: https://kczezulhpklofnibgarp.supabase.co
+  - key: VITE_SUPABASE_ANON_KEY
+    value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtjemV6dWxocGtsb2ZuaWJnYXJwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgxNTM4MDcsImV4cCI6MjA2MzcyOTgwN30.uVVDMNPzlbxPAYcv9aO7HwItybKkifxlz-XRYLhF_8o 
