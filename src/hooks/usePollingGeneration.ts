@@ -13,7 +13,9 @@ export const usePollingGeneration = () => {
 
   // Polling effect for non-SSE generation
   useEffect(() => {
-    if (!pollTaskId) return;
+    if (!pollTaskId || !isGenerating) return;
+
+    console.log('Starting polling for taskId:', pollTaskId);
 
     const pollInterval = setInterval(async () => {
       try {
@@ -24,11 +26,16 @@ export const usePollingGeneration = () => {
           },
         });
 
+        console.log('Polling response status:', response.status);
+
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errorText = await response.text();
+          console.error('Polling error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
+        console.log('Polling data:', data);
         
         if (data.status === 'generating') {
           setCurrentStory(data.content || '');
@@ -52,6 +59,15 @@ export const usePollingGeneration = () => {
             description: data.error || "Failed to generate story",
             variant: "destructive",
           });
+        } else if (data.status === 'not_found') {
+          setIsGenerating(false);
+          setPollTaskId(null);
+          clearInterval(pollInterval);
+          toast({
+            title: "Task Not Found",
+            description: "The generation task was not found or expired",
+            variant: "destructive",
+          });
         }
       } catch (error) {
         console.error('Polling error:', error);
@@ -60,14 +76,17 @@ export const usePollingGeneration = () => {
         clearInterval(pollInterval);
         toast({
           title: "Polling Error",
-          description: "Failed to check story generation status",
+          description: "Failed to get story generation status",
           variant: "destructive",
         });
       }
     }, 1000); // Poll every second
 
-    return () => clearInterval(pollInterval);
-  }, [pollTaskId, toast]);
+    return () => {
+      console.log('Cleaning up polling interval');
+      clearInterval(pollInterval);
+    };
+  }, [pollTaskId, isGenerating, toast]);
 
   const generateWithPolling = async (prompt: string) => {
     if (!prompt.trim()) {
@@ -84,6 +103,8 @@ export const usePollingGeneration = () => {
     setPollProgress(0);
 
     try {
+      console.log('Invoking polling function with prompt:', prompt);
+      
       const { data, error } = await supabase.functions.invoke('generate-story-polling', {
         body: { prompt },
       });
@@ -93,6 +114,7 @@ export const usePollingGeneration = () => {
         throw error;
       }
       
+      console.log('Got taskId:', data?.taskId);
       const { taskId } = data;
       setPollTaskId(taskId);
 

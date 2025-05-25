@@ -82,7 +82,10 @@ serve(async (req) => {
                     if (content) {
                       fullContent += content;
                       // Send the chunk to the client
-                      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content, fullContent })}\n\n`));
+                      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ content })}\n\n`));
+                      
+                      // Add a small delay to make streaming visible (100ms per chunk)
+                      await new Promise(resolve => setTimeout(resolve, 100));
                     }
                   } catch (e) {
                     // Ignore parsing errors for partial chunks
@@ -109,7 +112,7 @@ serve(async (req) => {
             }
 
             // Send final message
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true, fullContent })}\n\n`));
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ done: true })}\n\n`));
 
           } finally {
             reader.releaseLock();

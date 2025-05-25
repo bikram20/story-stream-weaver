@@ -26,16 +26,23 @@ serve(async (req) => {
     const url = new URL(req.url);
     const taskId = url.searchParams.get('taskId');
     
+    console.log('GET request for taskId:', taskId);
+    
     if (!taskId) {
-      return new Response(JSON.stringify({ status: 'no_task_id' }), {
+      return new Response(JSON.stringify({ error: 'No taskId provided' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       });
     }
 
     const task = activeGenerations.get(taskId);
+    console.log('Task status for', taskId, ':', task);
+    
     if (!task) {
-      return new Response(JSON.stringify({ status: 'not_found' }), {
+      return new Response(JSON.stringify({ 
+        status: 'not_found',
+        error: 'Task not found or expired'
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 404,
       });
@@ -51,7 +58,7 @@ serve(async (req) => {
       const { prompt } = await req.json();
       const taskId = crypto.randomUUID();
       
-      console.log('Starting story generation with polling for prompt:', prompt);
+      console.log('Starting story generation with polling for prompt:', prompt, 'taskId:', taskId);
       
       // Initialize task
       activeGenerations.set(taskId, {
@@ -76,19 +83,27 @@ serve(async (req) => {
     }
   }
 
-  return new Response('Method not allowed', { status: 405 });
+  return new Response('Method not allowed', { 
+    status: 405,
+    headers: corsHeaders
+  });
 });
 
 async function generateStoryInBackground(taskId: string, prompt: string) {
   try {
-    // Simulate progress updates
-    for (let progress = 10; progress <= 90; progress += 10) {
+    console.log('Background generation started for task:', taskId);
+    
+    // Simulate progress updates with delays to make it visible
+    const progressSteps = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+    
+    for (const progress of progressSteps) {
       activeGenerations.set(taskId, {
         status: 'generating',
         content: '',
         progress,
       });
-      await new Promise(resolve => setTimeout(resolve, 200)); // Small delay
+      console.log('Progress update for', taskId, ':', progress);
+      await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between progress updates
     }
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -140,15 +155,16 @@ async function generateStoryInBackground(taskId: string, prompt: string) {
       progress: 100,
     });
 
+    console.log('Story generation completed for task:', taskId);
+
     // Clean up after 5 minutes
     setTimeout(() => {
       activeGenerations.delete(taskId);
+      console.log('Cleaned up task:', taskId);
     }, 5 * 60 * 1000);
 
-    console.log('Story generation completed for task:', taskId);
-
   } catch (error) {
-    console.error('Error in background generation:', error);
+    console.error('Error in background generation for task', taskId, ':', error);
     activeGenerations.set(taskId, {
       status: 'error',
       error: error.message,
