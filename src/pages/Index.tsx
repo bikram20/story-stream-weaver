@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -63,6 +62,9 @@ const Index = () => {
       try {
         const { data, error } = await supabase.functions.invoke('generate-story-polling', {
           method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
         });
 
         if (error) throw error;
@@ -127,25 +129,66 @@ const Index = () => {
 
   const generateWithSSE = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('generate-story-sse', {
-        body: { prompt },
+      const response = await fetch(`https://kczezulhpklofnibgarp.supabase.co/functions/v1/generate-story-sse`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.supabaseKey}`,
+        },
+        body: JSON.stringify({ prompt }),
       });
 
-      if (error) {
-        console.error('SSE invoke error:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Display the generated story immediately
-      if (data && data.success && data.content) {
-        setCurrentStory(data.content);
-        setIsGenerating(false);
-        toast({
-          title: "Story Generated!",
-          description: "Your story has been created successfully.",
-        });
-      } else {
-        throw new Error('No story content received');
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body reader');
+      }
+
+      let accumulatedContent = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = new TextDecoder().decode(value);
+          const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              
+              try {
+                const parsed = JSON.parse(data);
+                
+                if (parsed.error) {
+                  throw new Error(parsed.error);
+                }
+                
+                if (parsed.content) {
+                  accumulatedContent += parsed.content;
+                  setCurrentStory(accumulatedContent);
+                }
+                
+                if (parsed.done) {
+                  setIsGenerating(false);
+                  toast({
+                    title: "Story Complete!",
+                    description: "Your story has been generated successfully.",
+                  });
+                  break;
+                }
+              } catch (e) {
+                // Ignore parsing errors for partial chunks
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
       }
 
     } catch (error) {
@@ -174,6 +217,62 @@ const Index = () => {
       setPollTaskId(taskId);
       setPollProgress(0);
       setCurrentStory('');
+
+      // Start polling for updates
+      const pollForUpdates = async () => {
+        try {
+          const response = await fetch(`https://kczezulhpklofnibgarp.supabase.co/functions/v1/generate-story-polling?taskId=${taskId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${supabase.supabaseKey}`,
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const result = await response.json();
+          
+          if (result.status === 'generating') {
+            setCurrentStory(result.content || '');
+            setPollProgress(result.progress || 0);
+            setTimeout(pollForUpdates, 1000); // Poll again in 1 second
+          } else if (result.status === 'complete') {
+            setCurrentStory(result.content);
+            setPollProgress(100);
+            setIsGenerating(false);
+            setPollTaskId(null);
+            toast({
+              title: "Story Complete!",
+              description: "Your story has been generated successfully.",
+            });
+          } else if (result.status === 'error') {
+            setIsGenerating(false);
+            setPollTaskId(null);
+            toast({
+              title: "Generation Failed",
+              description: result.error || "Failed to generate story",
+              variant: "destructive",
+            });
+          } else if (result.status === 'not_found') {
+            setTimeout(pollForUpdates, 1000); // Task might not be ready yet
+          }
+        } catch (error) {
+          console.error('Polling error:', error);
+          setIsGenerating(false);
+          setPollTaskId(null);
+          toast({
+            title: "Polling Error",
+            description: "Failed to check story generation status",
+            variant: "destructive",
+          });
+        }
+      };
+
+      // Start polling
+      setTimeout(pollForUpdates, 1000);
+
     } catch (error) {
       console.error('Polling generation error:', error);
       setIsGenerating(false);
